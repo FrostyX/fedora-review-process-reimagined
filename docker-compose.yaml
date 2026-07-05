@@ -1,0 +1,27 @@
+services:
+  # distgit:
+  #   build:
+  #     context: docker/distgit/
+  #   hostname: distgit
+  #   stdin_open: true
+  #   tty: true
+  #   volumes:
+  #     - .:/opt/copr:z
+  #     - dist-git:/var/lib/dist-git:z
+
+  distgit:
+    build:
+      context: docker/distgit/
+    hostname: distgit-httpd
+    stdin_open: true
+    tty: true
+    ports:
+      - "5080:5080"
+    volumes:
+      - .:/opt/:z
+      - dist-git:/var/lib/dist-git:z
+    # command: /usr/sbin/httpd -DFOREGROUND
+    command: bash
+
+volumes:
+  dist-git:
