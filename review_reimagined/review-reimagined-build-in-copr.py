@@ -4,7 +4,8 @@ import subprocess
 import tempfile
 import requests
 from pathlib import Path
-from copr.v3 import Client
+from contextlib import suppress
+from copr.v3 import Client, CoprRequestException, CoprNoResultException
 from ogr.services.forgejo import ForgejoService
 
 
@@ -14,7 +15,6 @@ FORGEJO_NAMESPACE = "packaging"
 FORGEJO_REPO = "package-review"
 PACKAGE_REVIEW_REPO = f"{FORGEJO_INSTANCE}/{FORGEJO_NAMESPACE}/{FORGEJO_REPO}"
 FORGEJO_TOKEN = "10ff559b9e1dc5c11992602090e9e29dbe164185"
-CHROOTS = ["fedora-rawhide-x86_64", "fedora-44-x86_64"]
 
 
 def get_arg_parser() -> argparse.ArgumentParser:
@@ -66,12 +66,42 @@ def copr_wipe_project(client: Client, owner: str, project: str) -> None:
     Therefore, we need to cancel and delete all the builds while preserving the
     project itself.
     """
-    builds = client.build_proxy.get_list(owner, project)
-    for build in builds:
-        if build.ended_on:
-            continue
-        client.build_proxy.cancel(build.id)
-    client.build_proxy.delete_list([x.id for x in builds])
+    with suppress(CoprNoResultException):
+        builds = client.build_proxy.get_list(owner, project)
+        for build in builds:
+            if build.ended_on:
+                continue
+            client.build_proxy.cancel(build.id)
+        client.build_proxy.delete_list([x.id for x in builds])
+
+
+def fedora_chroots_available_in_copr(client: Client):
+    chroots = client.mock_chroot_proxy.get_list()
+    return [
+        x for x in chroots.keys()
+        if x.startswith("fedora-")
+        and x.endswith("-x86_64")
+        and not x.startswith("fedora-eln")
+    ]
+
+
+def copr_create_or_update_project(
+    client: Client,
+    owner: str,
+    project: str,
+    chroots: list[str],
+) -> None:
+    try:
+        client.project_proxy.add(
+            owner,
+            project,
+            chroots=chroots,
+            unlisted_on_hp=True,
+        )
+    except CoprRequestException as ex:
+        if "already has a project named" not in str(ex):
+            raise CoprRequestException(str(ex)) from ex
+        client.project_proxy.edit(owner, project, chroots)
 
 
 def main():
@@ -95,7 +125,9 @@ def main():
         copr = Client.create_from_config_file()
         if args.force:
             copr_wipe_project(copr, COPR_OWNER, projectname)
-        copr.project_proxy.add(COPR_OWNER, projectname, CHROOTS, exist_ok=True)
+
+        chroots = fedora_chroots_available_in_copr(copr)
+        copr_create_or_update_project(copr, COPR_OWNER, projectname, chroots)
 
         previous_build_id = None
         for change in changes:
