@@ -9,6 +9,7 @@ RUN dnf -y update && \
                    cgit \
                    python3-rpkg \
                    python3-copr \
+                   python3-ogr \
                    rpkg \
                    tini \
                    uv \
