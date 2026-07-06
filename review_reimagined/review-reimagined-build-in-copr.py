@@ -42,6 +42,21 @@ def forgejo_file_url(namespace: str, repo: str, commit: str, filename: str):
     return f"{FORGEJO_INSTANCE}/{namespace}/{repo}/raw/commit/{commit}/{filename}"
 
 
+def copr_wipe_project(client: Client, owner: str, project: str) -> None:
+    """
+    It would be nice to just delete the whole project but we are facing
+    a race condition in Copr - https://github.com/fedora-copr/copr/issues/4184
+    Therefore, we need to cancel and delete all the builds while preserving the
+    project itself.
+    """
+    builds = client.build_proxy.get_list(owner, project)
+    for build in builds:
+        if build.ended_on:
+            continue
+        client.build_proxy.cancel(build.id)
+    client.build_proxy.delete_list([x.id for x in builds])
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
@@ -64,9 +79,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         copr = Client.create_from_config_file()
         if force:
-            # It would probably be better to just remove all existing builds
-            # instead of the whole project
-            copr.project_proxy.delete(COPR_OWNER, projectname)
+            copr_wipe_project(copr, COPR_OWNER, projectname)
         copr.project_proxy.add(COPR_OWNER, projectname, chroots, exist_ok=True)
 
         previous_build_id = None
