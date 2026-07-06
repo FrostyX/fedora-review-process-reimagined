@@ -1,3 +1,4 @@
+import argparse
 import logging
 import subprocess
 import tempfile
@@ -13,6 +14,22 @@ FORGEJO_NAMESPACE = "packaging"
 FORGEJO_REPO = "package-review"
 PACKAGE_REVIEW_REPO = f"{FORGEJO_INSTANCE}/{FORGEJO_NAMESPACE}/{FORGEJO_REPO}"
 FORGEJO_TOKEN = "10ff559b9e1dc5c11992602090e9e29dbe164185"
+CHROOTS = ["fedora-rawhide-x86_64", "fedora-44-x86_64"]
+
+
+def get_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--pull-request",
+        type=int,
+        required=True,
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+    )
+    return parser
 
 
 def forgejo_changed_files_per_commit(
@@ -61,11 +78,9 @@ def main():
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
 
-    # TODO Read these from outside (argparser, or more likely ENV variables)
-    force = False
-    pull_request = 1
-    projectname = f"fedora-review-pr-{pull_request}"
-    chroots = ["fedora-rawhide-x86_64", "fedora-44-x86_64"]
+    parser = get_arg_parser()
+    args = parser.parse_args()
+    projectname = f"fedora-review-pr-{args.pull_request}"
 
     # TODO This will get all the changes within that PR. Therefore if somebody
     # adds only one commit with one package to an existing PR of many packages,
@@ -73,14 +88,14 @@ def main():
     changes = forgejo_changed_files_per_commit(
         FORGEJO_NAMESPACE,
         FORGEJO_REPO,
-        pull_request,
+        args.pull_request,
     )
 
     with tempfile.TemporaryDirectory() as tmp:
         copr = Client.create_from_config_file()
-        if force:
+        if args.force:
             copr_wipe_project(copr, COPR_OWNER, projectname)
-        copr.project_proxy.add(COPR_OWNER, projectname, chroots, exist_ok=True)
+        copr.project_proxy.add(COPR_OWNER, projectname, CHROOTS, exist_ok=True)
 
         previous_build_id = None
         for change in changes:
