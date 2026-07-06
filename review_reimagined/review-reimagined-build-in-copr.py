@@ -69,8 +69,12 @@ def main():
             copr.project_proxy.delete(COPR_OWNER, projectname)
         copr.project_proxy.add(COPR_OWNER, projectname, chroots, exist_ok=True)
 
+        previous_build_id = None
         for change in changes:
             for filename in change["files"]:
+                # We may not actually want to use the change["commit"] but
+                # rather find out what was the latest commit that changed that
+                # exact file and submit the build from that commit/file.
                 url = forgejo_file_url(
                     FORGEJO_NAMESPACE,
                     FORGEJO_REPO,
@@ -82,10 +86,21 @@ def main():
                 spec = Path(tmp) / filename
                 spec.write_bytes(response.content)
 
+            # TODO If we have two spec files added within one commit, we should
+            # be able to build them in paralel, therefore `with_build_id`
+            # instead of `after_build_id`.
+            buildopts = {}
+            if previous_build_id:
+                buildopts = {"after_build_id": previous_build_id}
+
             build = copr.build_proxy.create_from_file(
-                COPR_OWNER, projectname, spec
+                COPR_OWNER,
+                projectname,
+                spec,
+                buildopts=buildopts,
             )
             log.info("Copr build: %s", build.id)
+            previous_build_id = build.id
 
 
 if __name__ == "__main__":
