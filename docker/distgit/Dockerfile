@@ -10,6 +10,7 @@ RUN dnf -y update && \
                    python3-rpkg \
                    python3-copr \
                    python3-ogr \
+                   python3-pydantic-settings \
                    rpkg \
                    tini \
                    uv \

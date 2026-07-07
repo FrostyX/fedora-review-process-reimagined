@@ -1,20 +1,20 @@
 import argparse
 import logging
-import subprocess
 import tempfile
 import requests
 from pathlib import Path
 from contextlib import suppress
+from pydantic_settings import BaseSettings
 from copr.v3 import Client, CoprRequestException, CoprNoResultException
 from ogr.services.forgejo import ForgejoService
 
 
-COPR_OWNER = "@fedora-review"
-FORGEJO_INSTANCE = "http://forgejo:3000"
-FORGEJO_NAMESPACE = "packaging"
-FORGEJO_REPO = "package-review"
-PACKAGE_REVIEW_REPO = f"{FORGEJO_INSTANCE}/{FORGEJO_NAMESPACE}/{FORGEJO_REPO}"
-FORGEJO_TOKEN = "10ff559b9e1dc5c11992602090e9e29dbe164185"
+class Settings(BaseSettings):
+    copr_owner: str = "@fedora-review"
+    forgejo_instance: str = "http://forgejo:3000"
+    forgejo_namespace: str = "packaging"
+    forgejo_repo: str = "package-review"
+    forgejo_token: str | None = None
 
 
 def get_arg_parser() -> argparse.ArgumentParser:
@@ -33,11 +33,13 @@ def get_arg_parser() -> argparse.ArgumentParser:
 
 
 def forgejo_changed_files_per_commit(
+    instance: str,
     namespace: str,
     repo: str,
     pull_request: int,
+    token: str | None = None
 ) -> list[dict]:
-    service = ForgejoService(instance_url=FORGEJO_INSTANCE, token=FORGEJO_TOKEN)
+    service = ForgejoService(instance_url=instance, token=token)
     project = service.get_project(repo=repo, namespace=namespace)
     pr = project.get_pr(pull_request)
 
@@ -55,8 +57,14 @@ def forgejo_changed_files_per_commit(
     return result
 
 
-def forgejo_file_url(namespace: str, repo: str, commit: str, filename: str):
-    return f"{FORGEJO_INSTANCE}/{namespace}/{repo}/raw/commit/{commit}/{filename}"
+def forgejo_file_url(
+    instance: str,
+    namespace: str,
+    repo: str,
+    commit: str,
+    filename: str,
+):
+    return f"{instance}/{namespace}/{repo}/raw/commit/{commit}/{filename}"
 
 
 def copr_wipe_project(client: Client, owner: str, project: str) -> None:
@@ -108,6 +116,7 @@ def main():
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
 
+    settings = Settings()
     parser = get_arg_parser()
     args = parser.parse_args()
     projectname = f"fedora-review-pr-{args.pull_request}"
@@ -116,18 +125,25 @@ def main():
     # adds only one commit with one package to an existing PR of many packages,
     # we will get all of them and rebuild all of the packages.
     changes = forgejo_changed_files_per_commit(
-        FORGEJO_NAMESPACE,
-        FORGEJO_REPO,
+        settings.forgejo_instance,
+        settings.forgejo_namespace,
+        settings.forgejo_repo,
         args.pull_request,
+        token=settings.forgejo_token,
     )
 
     with tempfile.TemporaryDirectory() as tmp:
         copr = Client.create_from_config_file()
         if args.force:
-            copr_wipe_project(copr, COPR_OWNER, projectname)
+            copr_wipe_project(copr, settings.copr_owner, projectname)
 
         chroots = fedora_chroots_available_in_copr(copr)
-        copr_create_or_update_project(copr, COPR_OWNER, projectname, chroots)
+        copr_create_or_update_project(
+            copr,
+            settings.copr_owner,
+            projectname,
+            chroots,
+        )
 
         previous_build_id = None
         for change in changes:
@@ -136,8 +152,9 @@ def main():
                 # rather find out what was the latest commit that changed that
                 # exact file and submit the build from that commit/file.
                 url = forgejo_file_url(
-                    FORGEJO_NAMESPACE,
-                    FORGEJO_REPO,
+                    settings.forgejo_instance,
+                    settings.forgejo_namespace,
+                    settings.forgejo_repo,
                     change["commit"],
                     filename,
                 )
@@ -154,7 +171,7 @@ def main():
                 buildopts = {"after_build_id": previous_build_id}
 
             build = copr.build_proxy.create_from_file(
-                COPR_OWNER,
+                settings.copr_owner,
                 projectname,
                 spec,
                 buildopts=buildopts,

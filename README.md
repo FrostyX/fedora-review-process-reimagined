@@ -7,7 +7,7 @@
 docker-compose up -d
 docker-compose exec -it distgit bash
 cd /opt
-PYTHONPATH=. python review_reimagined/review-reimagined-import-to-distgit.py
+FORGEJO_TOKEN="10ff559b9e1dc5c11992602090e9e29dbe164185" PYTHONPATH=. python review_reimagined/review-reimagined-import-to-distgit.py
 ```
 
 
