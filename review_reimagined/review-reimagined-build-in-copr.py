@@ -77,11 +77,11 @@ def copr_wipe_project(client: Client, owner: str, project: str) -> None:
     project itself.
     """
     with suppress(CoprNoResultException):
+        cancelable = ["running", "pending", "starting", "importing", "waiting"]
         builds = client.build_proxy.get_list(owner, project)
         for build in builds:
-            if build.ended_on:
-                continue
-            client.build_proxy.cancel(build.id)
+            if build.state in cancelable:
+                client.build_proxy.cancel(build.id)
         client.build_proxy.delete_list([x.id for x in builds])
 
 
