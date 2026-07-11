@@ -1,3 +1,4 @@
+import sys
 import argparse
 import logging
 import tempfile
@@ -6,6 +7,7 @@ from pathlib import Path
 from contextlib import suppress
 from pydantic_settings import BaseSettings
 from copr.v3 import Client, CoprRequestException, CoprNoResultException
+from copr.v3.helpers import wait
 from ogr.services.forgejo import ForgejoService
 
 
@@ -132,8 +134,8 @@ def main():
         token=settings.forgejo_token,
     )
 
+    copr = Client.create_from_config_file()
     with tempfile.TemporaryDirectory() as tmp:
-        copr = Client.create_from_config_file()
         if args.force:
             copr_wipe_project(copr, settings.copr_owner, projectname)
 
@@ -145,6 +147,7 @@ def main():
             chroots,
         )
 
+        builds = []
         previous_build_id = None
         for change in changes:
             for filename in change["files"]:
@@ -167,8 +170,8 @@ def main():
             # be able to build them in paralel, therefore `with_build_id`
             # instead of `after_build_id`.
             buildopts = {}
-            if previous_build_id:
-                buildopts = {"after_build_id": previous_build_id}
+            if builds:
+                buildopts = {"after_build_id": builds[-1].id}
 
             build = copr.build_proxy.create_from_file(
                 settings.copr_owner,
@@ -177,7 +180,15 @@ def main():
                 buildopts=buildopts,
             )
             log.info("Copr build: %s", build.id)
-            previous_build_id = build.id
+            builds.append(build)
+
+    log.info("Waiting for the Copr builds to finish")
+    builds = wait(builds)
+
+    if failed := [x.id for x in builds if x.state != "succeeded"]:
+        log.error("Failed to build: %s", failed)
+        sys.exit(1)
+    log.info("All builds finished successfully")
 
 
 if __name__ == "__main__":
