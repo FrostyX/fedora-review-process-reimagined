@@ -28,7 +28,7 @@ def get_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--force",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=False,
     )
     return parser
