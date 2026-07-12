@@ -176,6 +176,8 @@ def main():
     log.info("Waiting for the Copr builds to finish")
     builds = wait(builds)
 
+    # TODO We should only care about failures in Rawhide. If it fails for other
+    # branches, we should still consider it successful.
     if failed := [x.id for x in builds if x.state != "succeeded"]:
         log.error("Failed to build: %s", failed)
         sys.exit(1)
