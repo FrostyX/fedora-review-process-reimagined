@@ -117,6 +117,7 @@ def main():
             distgit = DistGit(log)
             distgit.create_repository(reponame, branches)
             distgit.update_description(reponame, "This is my custom description")
+            distgit.set_default_branch(reponame, "rawhide")
             distgit.import_package(
                 reponame,
                 branches,

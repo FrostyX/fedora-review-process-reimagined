@@ -78,6 +78,11 @@ class DistGit:
         subprocess.run(["git", "config", "user.name", name], check=True)
         subprocess.run(["git", "config", "user.email", email], check=True)
 
+    def set_default_branch(self, reponame: str, branch: str) -> None:
+        path = f"/var/lib/dist-git/git/rpms/{reponame}.git"
+        cmd = ["git", "symbolic-ref", "HEAD", f"refs/heads/{branch}"]
+        subprocess.run(cmd, check=True, cwd=path)
+
     def rebase(self, committish: str) -> None:
         cmd = ["git", "rebase", committish]
         subprocess.run(cmd, check=True)
