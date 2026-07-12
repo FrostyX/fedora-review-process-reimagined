@@ -11,6 +11,7 @@ RUN dnf -y update && \
                    python3-copr \
                    python3-ogr \
                    python3-pydantic-settings \
+                   python3-fedora-distro-aliases \
                    rpkg \
                    tini \
                    uv \

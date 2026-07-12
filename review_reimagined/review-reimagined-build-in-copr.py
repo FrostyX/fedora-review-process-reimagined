@@ -5,18 +5,10 @@ import tempfile
 import requests
 from pathlib import Path
 from contextlib import suppress
-from pydantic_settings import BaseSettings
 from copr.v3 import Client, CoprRequestException, CoprNoResultException
 from copr.v3.helpers import wait
 from ogr.services.forgejo import ForgejoService
-
-
-class Settings(BaseSettings):
-    copr_owner: str = "@fedora-review"
-    forgejo_instance: str = "http://forgejo:3000"
-    forgejo_namespace: str = "packaging"
-    forgejo_repo: str = "package-review"
-    forgejo_token: str | None = None
+from review_reimagined.settings import Settings
 
 
 def get_arg_parser() -> argparse.ArgumentParser:
@@ -148,7 +140,6 @@ def main():
         )
 
         builds = []
-        previous_build_id = None
         for change in changes:
             for filename in change["files"]:
                 # We may not actually want to use the change["commit"] but
