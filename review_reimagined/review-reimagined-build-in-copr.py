@@ -106,6 +106,22 @@ def copr_create_or_update_project(
         client.project_proxy.edit(owner, project, chroots)
 
 
+def copr_already_built_packages(
+    client: Client,
+    owner: str,
+    project: str,
+) -> list[str]:
+    packages = client.package_proxy.get_list(
+        owner,
+        project,
+        with_latest_succeeded_build=True,
+    )
+    return [
+        x["name"] for x in packages
+        if x["builds"]["latest_succeeded"] is not None
+    ]
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
@@ -115,9 +131,6 @@ def main():
     args = parser.parse_args()
     projectname = f"fedora-review-pr-{args.pull_request}"
 
-    # TODO This will get all the changes within that PR. Therefore if somebody
-    # adds only one commit with one package to an existing PR of many packages,
-    # we will get all of them and rebuild all of the packages.
     changes = forgejo_changed_files_per_commit(
         settings.forgejo_instance,
         settings.forgejo_namespace,
@@ -139,9 +152,20 @@ def main():
             chroots,
         )
 
+        already_built = copr_already_built_packages(
+            copr,
+            settings.copr_owner,
+            projectname,
+        )
+
         builds = []
         for change in changes:
             for filename in change["files"]:
+                packagename = filename.removesuffix(".spec")
+                if packagename in already_built:
+                    log.info("Skipping package %s, already built", packagename)
+                    continue
+
                 # We may not actually want to use the change["commit"] but
                 # rather find out what was the latest commit that changed that
                 # exact file and submit the build from that commit/file.
@@ -157,21 +181,21 @@ def main():
                 spec = Path(tmp) / filename
                 spec.write_bytes(response.content)
 
-            # TODO If we have two spec files added within one commit, we should
-            # be able to build them in paralel, therefore `with_build_id`
-            # instead of `after_build_id`.
-            buildopts = {}
-            if builds:
-                buildopts = {"after_build_id": builds[-1].id}
+                # TODO If we have two spec files added within one commit, we should
+                # be able to build them in paralel, therefore `with_build_id`
+                # instead of `after_build_id`.
+                buildopts = {}
+                if builds:
+                    buildopts = {"after_build_id": builds[-1].id}
 
-            build = copr.build_proxy.create_from_file(
-                settings.copr_owner,
-                projectname,
-                spec,
-                buildopts=buildopts,
-            )
-            log.info("Copr build: %s", build.id)
-            builds.append(build)
+                build = copr.build_proxy.create_from_file(
+                    settings.copr_owner,
+                    projectname,
+                    spec,
+                    buildopts=buildopts,
+                )
+                log.info("Copr build: %s", build.id)
+                builds.append(build)
 
     log.info("Waiting for the Copr builds to finish")
     builds = wait(builds)
