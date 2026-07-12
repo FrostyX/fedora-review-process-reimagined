@@ -122,6 +122,14 @@ def copr_already_built_packages(
     ]
 
 
+def copr_failed_in_rawhide(client, build_id) -> bool:
+    try:
+        chroot = client.build_chroot_proxy.get(build_id, "fedora-rawhide-x86_64")
+        return chroot.state != "succeeded"
+    except CoprNoResultException:
+        return True
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
@@ -200,10 +208,8 @@ def main():
     log.info("Waiting for the Copr builds to finish")
     builds = wait(builds)
 
-    # TODO We should only care about failures in Rawhide. If it fails for other
-    # branches, we should still consider it successful.
-    if failed := [x.id for x in builds if x.state != "succeeded"]:
-        log.error("Failed to build: %s", failed)
+    if failed := [x.id for x in builds if copr_failed_in_rawhide(copr, x.id)]:
+        log.error("Failed to build in Rawhide: %s", failed)
         sys.exit(1)
     log.info("All builds finished successfully")
 
