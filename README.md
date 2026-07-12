@@ -15,6 +15,11 @@ PYTHONPATH=. python review_reimagined/review-reimagined-import-to-distgit.py --p
 
 
 ```
+PYTHONPATH=. python review_reimagined/review-reimagined-cleanup.py --repo ~/git/package-review --push
+```
+
+
+```
 rpkg clone -a file:///var/lib/dist-git/git/rpms/bbb.git /tmp/foo
 cd /tmp/foo
 git checkout rawhide
