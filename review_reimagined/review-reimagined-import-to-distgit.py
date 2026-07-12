@@ -1,6 +1,7 @@
 import os
 import sys
 import rpm
+import argparse
 import logging
 import tempfile
 import requests
@@ -9,6 +10,16 @@ from review_reimagined.distgit import DistGit, GitUser
 from review_reimagined.settings import Settings
 from copr.v3 import Client
 from pathlib import Path
+
+
+def get_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--pull-request",
+        type=int,
+        required=True,
+    )
+    return parser
 
 
 def copr_build_results_urls(build_id: int, chroot: str) -> list[str]:
@@ -74,12 +85,13 @@ def package_builds_successfully_in(copr_owner, copr_project) -> dict:
 
 
 def main():
-    settings = Settings()
-    pull_request = 1
-    projectname = f"fedora-review-pr-{pull_request}"
-
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
+
+    settings = Settings()
+    parser = get_arg_parser()
+    args = parser.parse_args()
+    projectname = f"fedora-review-pr-{args.pull_request}"
 
     successfully_builds_in = package_builds_successfully_in(
         settings.copr_owner,
