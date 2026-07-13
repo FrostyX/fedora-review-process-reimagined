@@ -38,7 +38,8 @@ def forgejo_changed_files_per_commit(
     pr = project.get_pr(pull_request)
 
     result = []
-    for sha in pr.get_all_commits():
+    commits = reversed(list(pr.get_all_commits()))
+    for sha in commits:
         commit = service.api.repository.repo_get_single_commit(
             owner=namespace,
             repo=repo,
