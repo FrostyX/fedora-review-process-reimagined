@@ -1,3 +1,4 @@
+import os
 import sys
 import argparse
 import logging
@@ -170,7 +171,7 @@ def main():
         builds = []
         for change in changes:
             for filename in change["files"]:
-                packagename = filename.removesuffix(".spec")
+                packagename = os.path.dirname(filename)
                 if packagename in already_built:
                     log.info("Skipping package %s, already built", packagename)
                     continue
@@ -187,8 +188,14 @@ def main():
                 )
                 response = requests.get(url)
                 response.raise_for_status()
-                spec = Path(tmp) / filename
-                spec.write_bytes(response.content)
+                source = Path(tmp) / Path(filename).name
+                source.write_bytes(response.content)
+
+                if not filename.endswith(".spec"):
+                    continue
+
+                if Path(filename).stem != packagename:
+                    raise SystemExit("Specfile must match the directory name")
 
                 # TODO If we have two spec files added within one commit, we should
                 # be able to build them in paralel, therefore `with_build_id`
@@ -200,7 +207,7 @@ def main():
                 build = copr.build_proxy.create_from_file(
                     settings.copr_owner,
                     projectname,
-                    spec,
+                    source,
                     buildopts=buildopts,
                 )
                 log.info("Copr build: %s", build.id)

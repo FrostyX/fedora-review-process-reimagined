@@ -1,3 +1,4 @@
+import shutil
 import argparse
 import logging
 from pathlib import Path
@@ -39,10 +40,13 @@ def main():
     repo = Repo(args.repo)
 
     for spec in args.repo.rglob("*.spec"):
+        if f"{spec.parent.name}.spec" != spec.name:
+            raise SystemExit("Specfile must match the directory name")
+
         message = cleanup_commit_message(spec)
-        repo.index.remove(spec)
+        repo.index.remove(spec.parent, r=True)
         repo.index.commit(message)
-        spec.unlink()
+        shutil.rmtree(spec.parent)
         log.info("Removed: %s", spec)
 
     if args.push:
