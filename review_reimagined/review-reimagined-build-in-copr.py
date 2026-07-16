@@ -1,5 +1,6 @@
 import os
 import sys
+import subprocess
 import argparse
 import logging
 import tempfile
@@ -132,6 +133,21 @@ def copr_failed_in_rawhide(client, build_id) -> bool:
         return True
 
 
+def build_srpm(spec: Path) -> Path:
+    path = spec.parent
+    cmd = [
+        "rpmbuild", "-bs", spec,
+        "--define", "%_disable_source_fetch 0",
+        "--define", f"%_sourcedir {path}",
+        "--define", f"_srcrpmdir {path}",
+    ]
+    subprocess.run(cmd, check=True)
+    srpms = list(path.rglob("*.src.rpm"))
+    if len(srpms) != 1:
+        raise SystemExit(f"One SRPM was expected in: {path}")
+    return srpms[0]
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
@@ -191,11 +207,14 @@ def main():
                 source = Path(tmp) / Path(filename).name
                 source.write_bytes(response.content)
 
-                if not filename.endswith(".spec"):
+                if source.suffix != ".spec":
                     continue
 
-                if Path(filename).stem != packagename:
+                if source.stem != packagename:
                     raise SystemExit("Specfile must match the directory name")
+
+                spec = source
+                srpm = build_srpm(spec)
 
                 # TODO If we have two spec files added within one commit, we should
                 # be able to build them in paralel, therefore `with_build_id`
@@ -207,7 +226,7 @@ def main():
                 build = copr.build_proxy.create_from_file(
                     settings.copr_owner,
                     projectname,
-                    source,
+                    srpm,
                     buildopts=buildopts,
                 )
                 log.info("Copr build: %s", build.id)
