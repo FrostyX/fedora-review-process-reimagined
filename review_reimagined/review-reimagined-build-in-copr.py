@@ -54,14 +54,8 @@ def forgejo_changed_files_per_commit(
     return result
 
 
-def forgejo_file_url(
-    instance: str,
-    namespace: str,
-    repo: str,
-    commit: str,
-    filename: str,
-):
-    return f"{instance}/{namespace}/{repo}/raw/commit/{commit}/{filename}"
+def forgejo_clone_url(instance: str, namespace: str, repo: str) -> str:
+    return f"{instance}/{namespace}/{repo}"
 
 
 def copr_wipe_project(client: Client, owner: str, project: str) -> None:
@@ -133,19 +127,14 @@ def copr_failed_in_rawhide(client, build_id) -> bool:
         return True
 
 
-def build_srpm(spec: Path) -> Path:
-    path = spec.parent
-    cmd = [
-        "rpmbuild", "-bs", spec,
-        "--define", "%_disable_source_fetch 0",
-        "--define", f"%_sourcedir {path}",
-        "--define", f"_srcrpmdir {path}",
-    ]
-    subprocess.run(cmd, check=True)
-    srpms = list(path.rglob("*.src.rpm"))
-    if len(srpms) != 1:
-        raise SystemExit(f"One SRPM was expected in: {path}")
-    return srpms[0]
+def copr_custom_script(clone_url, commit, directory):
+    return (
+        f"#! /bin/sh -xe\n"
+        f"git clone {clone_url} package-review\n"
+        f"cd package-review\n"
+        f"git checkout {commit}\n"
+        f"cp -r {directory}/* ..\n"
+    )
 
 
 def main():
@@ -187,46 +176,44 @@ def main():
         builds = []
         for change in changes:
             for filename in change["files"]:
-                packagename = os.path.dirname(filename)
+                filename = Path(filename)
+                packagename = filename.parent.name
                 if packagename in already_built:
                     log.info("Skipping package %s, already built", packagename)
                     continue
 
-                # We may not actually want to use the change["commit"] but
-                # rather find out what was the latest commit that changed that
-                # exact file and submit the build from that commit/file.
-                url = forgejo_file_url(
+                if filename.suffix != ".spec":
+                    continue
+
+                if filename.stem != packagename:
+                    raise SystemExit("Specfile must match the directory name")
+
+                clone_url = forgejo_clone_url(
                     settings.forgejo_instance,
                     settings.forgejo_namespace,
                     settings.forgejo_repo,
-                    change["commit"],
-                    filename,
                 )
-                response = requests.get(url)
-                response.raise_for_status()
-                source = Path(tmp) / Path(filename).name
-                source.write_bytes(response.content)
 
-                if source.suffix != ".spec":
-                    continue
+                # We may not actually want to use the change["commit"] but
+                # rather find out what was the latest commit that changed that
+                # exact file and submit the build from that commit/file.
+                commit = change["commit"]
 
-                if source.stem != packagename:
-                    raise SystemExit("Specfile must match the directory name")
+                script_builddeps = ["git"]
+                script = copr_custom_script(clone_url, commit, filename.parent)
 
-                spec = source
-                srpm = build_srpm(spec)
-
-                # TODO If we have two spec files added within one commit, we should
-                # be able to build them in paralel, therefore `with_build_id`
-                # instead of `after_build_id`.
+                # TODO If we have two spec files added within one commit, we
+                # should be able to build them in paralel, therefore
+                # `with_build_id` instead of `after_build_id`.
                 buildopts = {}
                 if builds:
                     buildopts = {"after_build_id": builds[-1].id}
 
-                build = copr.build_proxy.create_from_file(
+                build = copr.build_proxy.create_from_custom(
                     settings.copr_owner,
                     projectname,
-                    srpm,
+                    script,
+                    script_builddeps=script_builddeps,
                     buildopts=buildopts,
                 )
                 log.info("Copr build: %s", build.id)
