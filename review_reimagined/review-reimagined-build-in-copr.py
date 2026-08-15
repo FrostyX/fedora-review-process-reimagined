@@ -133,6 +133,19 @@ def copr_custom_script(clone_url, commit, directory):
         f"git clone {clone_url} package-review\n"
         f"cd package-review\n"
         f"git checkout {commit}\n"
+
+        # There is no standardized way to define vendored sources in the spec
+        # file and generate them on the fly when building a SRPM. There is a
+        # RFE for this feature and several approaches are being discussed.
+        # https://forge.fedoraproject.org/packaging/guidelines/issues/1132
+        # Until we agree on the standard solution, I am implementing the
+        # easiest possible solution. Users can put a `generate-sources.sh`
+        # script next to their spec file and we will run it for them.
+        f"if [ -f {directory}/generate-sources.sh ]; then\n"
+        f"    chmod +x {directory}/generate-sources.sh\n"
+        f"    (cd {directory} && ./generate-sources.sh)\n"
+        f"fi\n"
+
         f"cp -r {directory}/* ..\n"
     )
 
@@ -199,7 +212,16 @@ def main():
                 # exact file and submit the build from that commit/file.
                 commit = change["commit"]
 
-                script_builddeps = ["git"]
+                # Can we reasonably hardcode a list of dependencies or do we
+                # need to allow users to define themselves? For example by
+                # creating a `generate-sources-dependencies.txt`?
+                script_builddeps = [
+                    "git",
+                    "rpmdevtools",
+                    "python3-specfile",
+                    "golang",
+                    "go-vendor-tools",
+                ]
                 script = copr_custom_script(clone_url, commit, filename.parent)
 
                 # TODO If we have two spec files added within one commit, we
