@@ -160,11 +160,11 @@ def main():
     projectname = f"fedora-review-pr-{args.pull_request}"
 
     changes = forgejo_changed_files_per_commit(
-        settings.forgejo_instance,
-        settings.forgejo_namespace,
-        settings.forgejo_repo,
+        settings.forge_instance,
+        settings.forge_namespace,
+        settings.forge_repo,
         args.pull_request,
-        token=settings.forgejo_token,
+        token=settings.forge_token,
     )
 
     copr = Client.create_from_config_file()
@@ -202,9 +202,9 @@ def main():
                     raise SystemExit("Specfile must match the directory name")
 
                 clone_url = forgejo_clone_url(
-                    settings.forgejo_instance,
-                    settings.forgejo_namespace,
-                    settings.forgejo_repo,
+                    settings.forge_instance,
+                    settings.forge_namespace,
+                    settings.forge_repo,
                 )
 
                 # We may not actually want to use the change["commit"] but
