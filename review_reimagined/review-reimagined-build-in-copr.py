@@ -215,6 +215,9 @@ def main():
                 # Can we reasonably hardcode a list of dependencies or do we
                 # need to allow users to define themselves? For example by
                 # creating a `generate-sources-dependencies.txt`?
+                # It could be standardized into the specfile
+                # https://github.com/rpm-software-management/rpm/issues/2631
+                # https://github.com/rpm-software-management/rpm/issues/2709
                 script_builddeps = [
                     "git",
                     "rpmdevtools",
