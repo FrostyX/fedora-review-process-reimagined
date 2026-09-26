@@ -9,7 +9,7 @@ from pathlib import Path
 from contextlib import suppress
 from copr.v3 import Client, CoprRequestException, CoprNoResultException
 from copr.v3.helpers import wait
-from ogr.services.forgejo import ForgejoService
+from ogr.services.forgejo import ForgejoService, ForgejoPullRequest
 from review_reimagined.settings import Settings
 
 
@@ -28,34 +28,44 @@ def get_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def forgejo_changed_files_per_commit(
-    instance: str,
-    namespace: str,
-    repo: str,
-    pull_request: int,
-    token: str | None = None
-) -> list[dict]:
-    service = ForgejoService(instance_url=instance, token=token)
-    project = service.get_project(repo=repo, namespace=namespace)
-    pr = project.get_pr(pull_request)
+class Forgejo:
+    def __init__(self, instance: str, token: str | None = None):
+        self.instance = instance
+        self.token = token
 
-    result = []
-    commits = reversed(list(pr.get_all_commits()))
-    for sha in commits:
-        commit = service.api.repository.repo_get_single_commit(
-            owner=namespace,
-            repo=repo,
-            sha=sha,
-        )
-        result.append({
-            "commit": sha,
-            "files": [x.filename for x in commit.files],
-        })
-    return result
+    def pull_request(
+        self,
+        namespace: str,
+        repo: str,
+        number: int,
+    ) -> ForgejoPullRequest:
+        service = ForgejoService(instance_url=self.instance, token=self.token)
+        project = service.get_project(repo=repo, namespace=namespace)
+        return project.get_pr(number)
 
+    def changed_files_per_commit(
+        self,
+        namespace: str,
+        repo: str,
+        pull_request: ForgejoPullRequest,
+    ) -> list[dict]:
+        service = ForgejoService(instance_url=self.instance, token=self.token)
+        result = []
+        commits = reversed(list(pull_request.get_all_commits()))
+        for sha in commits:
+            commit = service.api.repository.repo_get_single_commit(
+                owner=namespace,
+                repo=repo,
+                sha=sha,
+            )
+            result.append({
+                "commit": sha,
+                "files": [x.filename for x in commit.files],
+            })
+        return result
 
-def forgejo_clone_url(instance: str, namespace: str, repo: str) -> str:
-    return f"{instance}/{namespace}/{repo}"
+    def clone_url(self, pull_request: ForgejoPullRequest) -> str:
+        return pull_request.source_project.get_git_urls()["git"]
 
 
 def copr_wipe_project(client: Client, owner: str, project: str) -> None:
@@ -159,12 +169,16 @@ def main():
     args = parser.parse_args()
     projectname = f"fedora-review-pr-{args.pull_request}"
 
-    changes = forgejo_changed_files_per_commit(
-        settings.forge_instance,
+    forgejo = Forgejo(settings.forge_instance, token=settings.forge_token)
+    pull_request = forgejo.pull_request(
         settings.forge_namespace,
         settings.forge_repo,
         args.pull_request,
-        token=settings.forge_token,
+    )
+    changes = forgejo.changed_files_per_commit(
+        settings.forge_namespace,
+        settings.forge_repo,
+        pull_request,
     )
 
     copr = Client.create_from_config_file()
@@ -201,11 +215,7 @@ def main():
                 if filename.stem != packagename:
                     raise SystemExit("Specfile must match the directory name")
 
-                clone_url = forgejo_clone_url(
-                    settings.forge_instance,
-                    settings.forge_namespace,
-                    settings.forge_repo,
-                )
+                clone_url = forgejo.clone_url(pull_request)
 
                 # We may not actually want to use the change["commit"] but
                 # rather find out what was the latest commit that changed that
