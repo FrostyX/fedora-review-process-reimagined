@@ -7,6 +7,7 @@ import tempfile
 import requests
 from pathlib import Path
 from contextlib import suppress
+from urllib.parse import urljoin
 from copr.v3 import Client, CoprRequestException, CoprNoResultException
 from copr.v3.helpers import wait
 from ogr.services.forgejo import ForgejoService, ForgejoPullRequest
@@ -82,6 +83,13 @@ def copr_wipe_project(client: Client, owner: str, project: str) -> None:
             if build.state in cancelable:
                 client.build_proxy.cancel(build.id)
         client.build_proxy.delete_list([x.id for x in builds])
+
+
+def copr_build_url(client: Client, build_id: int) -> str:
+    """
+    Return a predictable URL for a Copr build
+    """
+    return urljoin(client.config["copr_url"], f"/coprs/build/{build_id}")
 
 
 def fedora_chroots_available_in_copr(client: Client):
@@ -251,7 +259,7 @@ def main():
                     script_builddeps=script_builddeps,
                     buildopts=buildopts,
                 )
-                log.info("Copr build: %s", build.id)
+                log.info("Copr build: %s", copr_build_url(copr, build.id))
                 builds.append(build)
 
     log.info("Waiting for the Copr builds to finish")
