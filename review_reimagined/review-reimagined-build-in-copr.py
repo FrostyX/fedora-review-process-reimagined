@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import subprocess
 import argparse
 import logging
@@ -145,6 +146,34 @@ def copr_failed_in_rawhide(client, build_id) -> bool:
         return True
 
 
+def copr_chroot_results(client, build_id) -> dict[str, str]:
+    """
+    This build's state per chroot, e.g. {"fedora-rawhide-x86_64":
+    "succeeded", "fedora-41-x86_64": "failed"}.
+    """
+    chroots = client.build_chroot_proxy.get_list(build_id)
+    return {chroot.name: chroot.state for chroot in chroots}
+
+
+def write_builds_output(builds_info: list[dict]) -> None:
+    """
+    Write per-package Copr build info (including copr_chroot_results()) as
+    the `builds` workflow step output, unfiltered. A no-op outside of
+    Actions, where GITHUB_OUTPUT isn't set.
+
+    GITHUB_OUTPUT also works on Forgejo Actions, which mirrors it from its
+    own FORGEJO_OUTPUT (Forgejo Runner v7.0.0+; older runners only define
+    GITHUB_OUTPUT).
+    See https://forgejo.org/docs/latest/user/actions/github-actions/
+    """
+    output_path = os.environ.get("GITHUB_OUTPUT")
+    if not output_path:
+        return
+    with open(output_path, "a") as fh:
+        # GITHUB_OUTPUT is `key=value` lines, not JSON -- only the value is.
+        print(f"builds={json.dumps(builds_info)}", file=fh)
+
+
 def copr_custom_script(clone_url, commit, directory):
     return (
         f"#! /bin/sh -xe\n"
@@ -209,6 +238,7 @@ def main():
         )
 
         builds = []
+        build_info = {}  # build ID -> {package, build_id, clone_url, commit}
         for change in changes:
             for filename in change["files"]:
                 filename = Path(filename)
@@ -261,9 +291,19 @@ def main():
                 )
                 log.info("Copr build: %s", copr_build_url(copr, build.id))
                 builds.append(build)
+                build_info[build.id] = {
+                    "package": packagename,
+                    "build_id": build.id,
+                    "clone_url": clone_url,
+                    "commit": commit,
+                }
 
     log.info("Waiting for the Copr builds to finish")
     builds = wait(builds)
+
+    for build in builds:
+        build_info[build.id]["chroots"] = copr_chroot_results(copr, build.id)
+    write_builds_output(list(build_info.values()))
 
     if failed := [x.id for x in builds if copr_failed_in_rawhide(copr, x.id)]:
         log.error("Failed to build in Rawhide: %s", failed)
